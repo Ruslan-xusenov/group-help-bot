@@ -25,4 +25,16 @@ class ThrottlingMiddleware(BaseMiddleware):
                 return
         
         self.users[user_id] = now
+        
+        # Periodic cleanup (1% chance per call to keep memory clean)
+        if len(self.users) > 1000 and time.time() % 100 < 1:
+            self._cleanup()
+        
         return await handler(event, data)
+
+    def _cleanup(self):
+        now = time.time()
+        # Remove users who haven't messaged in a while (10x the delay)
+        expired = [uid for uid, ltime in self.users.items() if now - ltime > self.delay * 10]
+        for uid in expired:
+            del self.users[uid]

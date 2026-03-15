@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
 from aiogram import Router, F, Bot
@@ -53,12 +54,12 @@ async def handle_group_message(message: Message, bot: Bot):
         logger.error(f"Error checking admin status: {e}")
 
     user = message.from_user
-    await db.register_user(user.id, user.username, user.full_name)
-    
     display_name = f"@{user.username}" if user.username else user.full_name
     
-    await db.update_user_name_and_history(message.chat.id, user.id, display_name)
-    await db.log_message(message.chat.id, user.id, message.message_id)
+    # Background tasks for statistics and history (Optimization)
+    asyncio.create_task(db.register_user(user.id, user.username, user.full_name))
+    asyncio.create_task(db.update_user_name_and_history(message.chat.id, user.id, display_name))
+    asyncio.create_task(db.log_message(message.chat.id, user.id, message.message_id))
 
     text = message.text or message.caption or ""
     

@@ -43,9 +43,14 @@ async def main():
 
     logger.info(f"🚀 Bot ishga tushdi | Super Admin ID: {SUPER_ADMIN_ID}")
     
+    # Start flusher task
+    flusher_task = asyncio.create_task(db.start_flusher())
+    
     try:
         await dp.start_polling(bot)
     finally:
+        flusher_task.cancel()
+        await db.flush_message_logs()
         await bot.session.close()
 
 if __name__ == "__main__":

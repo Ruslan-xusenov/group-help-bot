@@ -1,4 +1,5 @@
 import datetime
+import asyncio
 from typing import List, Optional
 from sqlalchemy import Column, Integer, String, DateTime, text, select, delete, update, BigInteger
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -6,8 +7,24 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from config import DB_URL, SUPER_ADMIN_ID
 
-engine = create_async_engine(DB_URL)
+engine = create_async_engine(
+    DB_URL,
+    pool_size=20,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=3600,
+)
 async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+# Cache state
+_admin_cache = {}  # {user_id: (is_admin, expire_time)}
+_bad_words_cache = {"words": [], "expire_time": 0}
+CACHE_TTL = 300  # 5 minutes
+
+# Message buffer for batch logging
+_message_buffer = []
+_buffer_lock = asyncio.Lock()
+MAX_BUFFER_SIZE = 50
 
 class Base(DeclarativeBase):
     pass
@@ -64,9 +81,18 @@ async def init_db():
 async def is_admin(user_id: int) -> bool:
     if user_id == SUPER_ADMIN_ID:
         return True
+    
+    now = datetime.datetime.now().timestamp()
+    if user_id in _admin_cache:
+        val, exp = _admin_cache[user_id]
+        if now < exp:
+            return val
+
     async with async_session() as session:
         result = await session.execute(select(Admin).where(Admin.user_id == user_id))
-        return result.scalar_one_or_none() is not None
+        is_adm = result.scalar_one_or_none() is not None
+        _admin_cache[user_id] = (is_adm, now + CACHE_TTL)
+        return is_adm
 
 async def has_permission(user_id: int, perm: str) -> bool:
     if user_id == SUPER_ADMIN_ID:
@@ -99,6 +125,9 @@ async def add_admin(user_id: int, can_warn=1, can_mute=1, can_ban=0, can_delete=
             can_invite=can_invite
         ))
         await session.commit()
+        # Invalidate cache
+        if user_id in _admin_cache:
+            del _admin_cache[user_id]
         return True
 
 async def update_admin_permissions(user_id: int, **perms) -> bool:
@@ -131,6 +160,9 @@ async def remove_admin(user_id: int) -> bool:
     async with async_session() as session:
         result = await session.execute(delete(Admin).where(Admin.user_id == user_id))
         await session.commit()
+        # Invalidate cache
+        if user_id in _admin_cache:
+            del _admin_cache[user_id]
         return (result.rowcount or 0) > 0
 
 async def register_user(user_id: int, username: Optional[str], full_name: str):
@@ -142,6 +174,8 @@ async def register_user(user_id: int, username: Optional[str], full_name: str):
         clean_username = username.replace("@", "").strip().lower() if username else None
         
         if user:
+            if user.username == clean_username and user.full_name == full_name:
+                return
             user.username = clean_username
             user.full_name = full_name
         else:
@@ -278,9 +312,16 @@ async def remove_custom_bad_word(word: str) -> bool:
         return (res.rowcount or 0) > 0
 
 async def get_custom_bad_words() -> List[str]:
+    now = datetime.datetime.now().timestamp()
+    if now < _bad_words_cache["expire_time"]:
+        return _bad_words_cache["words"]
+
     async with async_session() as session:
         res = await session.execute(select(CustomBadWord.word))
-        return [row[0] for row in res.all()]
+        words = [row[0] for row in res.all()]
+        _bad_words_cache["words"] = words
+        _bad_words_cache["expire_time"] = now + CACHE_TTL
+        return words
 
 async def update_user_name_and_history(chat_id: int, user_id: int, user_name: str) -> None:
     async with async_session() as session:
@@ -331,9 +372,30 @@ def get_registration_year(user_id: int) -> str:
     return "2024-2025"
 
 async def log_message(chat_id: int, user_id: int, message_id: int):
-    async with async_session() as session:
-        session.add(MessageLog(chat_id=chat_id, user_id=user_id, message_id=message_id))
-        await session.commit()
+    async with _buffer_lock:
+        _message_buffer.append(MessageLog(chat_id=chat_id, user_id=user_id, message_id=message_id))
+        if len(_message_buffer) >= MAX_BUFFER_SIZE:
+            await flush_message_logs()
+
+async def flush_message_logs():
+    async with _buffer_lock:
+        if not _message_buffer:
+            return
+        
+        async with async_session() as session:
+            try:
+                session.add_all(_message_buffer)
+                await session.commit()
+                _message_buffer.clear()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Error flushing message logs: {e}")
+
+async def start_flusher():
+    """Background task to periodically flush logs"""
+    while True:
+        await asyncio.sleep(10)
+        await flush_message_logs()
 
 async def get_user_messages(chat_id: int, user_id: int, limit: int) -> List[int]:
     async with async_session() as session:
