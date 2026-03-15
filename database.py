@@ -1,6 +1,6 @@
 import datetime
 from typing import List, Optional
-from sqlalchemy import Column, Integer, String, DateTime, text, select, delete, update
+from sqlalchemy import Column, Integer, String, DateTime, text, select, delete, update, BigInteger
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -14,7 +14,7 @@ class Base(DeclarativeBase):
 
 class Admin(Base):
     __tablename__ = "admins"
-    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     can_warn: Mapped[bool] = mapped_column(Integer, default=1)
     can_mute: Mapped[bool] = mapped_column(Integer, default=1)
     can_ban: Mapped[bool] = mapped_column(Integer, default=0)
@@ -23,9 +23,9 @@ class Admin(Base):
 
 class WarningRecord(Base):
     __tablename__ = "warnings"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    chat_id: Mapped[int] = mapped_column(Integer, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     count: Mapped[int] = mapped_column(Integer, default=0)
     user_name: Mapped[str] = mapped_column(String(255), default="Noma'lum")
     total_warnings: Mapped[int] = mapped_column(Integer, default=0)
@@ -34,8 +34,8 @@ class WarningRecord(Base):
 
 class NameHistory(Base):
     __tablename__ = "name_history"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     old_name: Mapped[str] = mapped_column(String(255))
     changed_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now)
 
@@ -45,7 +45,7 @@ class CustomBadWord(Base):
 
 class UserRegistry(Base):
     __tablename__ = "user_registry"
-    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[Optional[str]] = mapped_column(String(255), index=True)
     full_name: Mapped[str] = mapped_column(String(255))
     last_seen: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
