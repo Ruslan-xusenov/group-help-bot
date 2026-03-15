@@ -101,11 +101,12 @@ async def handle_group_message(message: Message, bot: Bot):
 
 async def _respond_warning(message: Message, reason: str, count: int):
     user_mention = format_user_mention(message.from_user)
+    next_warn = "❗ Yana bir ogohlantirishdan so'ng mute qilinasiz!" if count == MAX_WARNINGS - 1 else ""
     text = (
         f"⚠️ <b>Ogohlantirish {count}/{MAX_WARNINGS}</b>\n"
         f"👤 Foydalanuvchi: {user_mention}\n"
         f"📋 Sabab: {reason}\n\n"
-        f"{'❗ Yana bir ogohlantirishdan so\'ng mute qilinasiz!' if count == MAX_WARNINGS - 1 else ''}"
+        f"{next_warn}"
     )
     await message.answer(text, parse_mode="HTML")
 
