@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: oxun_bot_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-safe_password_123}
+      POSTGRES_DB: oxun_bot_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxun_bot_user -d oxun_bot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DB_URL=postgresql+asyncpg://oxun_bot_user:${DB_PASSWORD:-safe_password_123}@db/oxun_bot_db
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  pgdata:
