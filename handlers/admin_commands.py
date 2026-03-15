@@ -85,7 +85,7 @@ async def generate_help_text(user_id: int):
         text += "🔓 <code>/unban [target]</code> — Bandan chiqarish\n"
     
     if perms.get("delete"):
-        text += "🗑️ <code>/clear [soni]</code> — Xabarlarni tozalash\n"
+        text += "🗑️ <code>/clear [target] [soni]</code> — Xabarlarni tozalash\n"
     
     text += (
         "\n📊 <code>/stats</code> — Guruh statistikasi\n"
@@ -294,22 +294,50 @@ async def clear_messages_cmd(message: Message, command: CommandObject):
     if not await _require_permission(message, "delete"): return
     
     amount = 100
-    if command.args and command.args.isdigit():
-        amount = min(int(command.args), 500)
+    target_id = None
+    
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        if command.args and command.args.isdigit():
+            amount = min(int(command.args), 500)
+    elif command.args:
+        args = command.args.split()
+        arg = args[0]
+        if arg.startswith("@"):
+            target_id = await db.get_id_by_username(arg)
+            if len(args) > 1 and args[1].isdigit():
+                amount = min(int(args[1]), 500)
+        elif arg.isdigit() or (arg.startswith("-") and arg[1:].isdigit()):
+             # If arg is small, assume it's amount. Otherwise it's probably a user ID.
+             val = int(arg)
+             if len(arg) < 6: # amount
+                 amount = min(val, 500)
+             else: # ID
+                 target_id = val
+                 if len(args) > 1 and args[1].isdigit():
+                     amount = min(int(args[1]), 500)
     
     deleted = 0
-    try:
-        current_id = message.message_id
-        for i in range(amount + 1): # +1 to include the command itself
+    if target_id:
+        msg_ids = await db.get_user_messages(message.chat.id, target_id, amount)
+        for mid in msg_ids:
             try:
-                msg_id = current_id - i
-                await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_id)
+                await message.bot.delete_message(chat_id=message.chat.id, message_id=mid)
                 deleted += 1
             except Exception:
                 continue
-        
-        # We can't really "answer" here easily if we deleted the command, 
-        # but we can try to send a new message.
+        if msg_ids:
+            await db.delete_logged_messages(message.chat.id, msg_ids)
+    else:
+        current_id = message.message_id
+        for i in range(amount + 1):
+            try:
+                await message.bot.delete_message(chat_id=message.chat.id, message_id=current_id - i)
+                deleted += 1
+            except Exception:
+                continue
+    
+    try:
         temp_msg = await message.bot.send_message(
             chat_id=message.chat.id, 
             text=f"🗑️ <b>{deleted}</b> ta xabar o'chirildi.",
@@ -318,8 +346,8 @@ async def clear_messages_cmd(message: Message, command: CommandObject):
         import asyncio
         await asyncio.sleep(5)
         await temp_msg.delete()
-    except Exception as e:
-        logger.error(f"Clear error: {e}")
+    except Exception:
+        pass
 
 @router.message(Command("info"))
 async def info_cmd(message: Message, command: CommandObject):
@@ -389,7 +417,7 @@ async def help_admin_cmd(message: Message):
         text += "🔓 <code>/unban [target]</code> — Bandan chiqarish\n"
     
     if perms.get("delete"):
-        text += "🗑️ <code>/clear [soni]</code> — Xabarlarni tozalash\n"
+        text += "🗑️ <code>/clear [target] [soni]</code> — Xabarlarni tozalash\n"
     
     text += (
         "\n📊 <code>/stats</code> — Guruh statistikasi\n"

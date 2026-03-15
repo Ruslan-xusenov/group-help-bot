@@ -50,6 +50,13 @@ class UserRegistry(Base):
     full_name: Mapped[str] = mapped_column(String(255))
     last_seen: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
+class MessageLog(Base):
+    __tablename__ = "message_log"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    message_id: Mapped[int] = mapped_column(BigInteger)
+
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -322,3 +329,25 @@ def get_registration_year(user_id: int) -> str:
         if user_id < limit:
             return year
     return "2024-2025"
+
+async def log_message(chat_id: int, user_id: int, message_id: int):
+    async with async_session() as session:
+        session.add(MessageLog(chat_id=chat_id, user_id=user_id, message_id=message_id))
+        await session.commit()
+
+async def get_user_messages(chat_id: int, user_id: int, limit: int) -> List[int]:
+    async with async_session() as session:
+        stmt = select(MessageLog.message_id).where(
+            MessageLog.chat_id == chat_id,
+            MessageLog.user_id == user_id
+        ).order_by(MessageLog.message_id.desc()).limit(limit)
+        res = await session.execute(stmt)
+        return [row[0] for row in res.scalars().all()]
+
+async def delete_logged_messages(chat_id: int, message_ids: List[int]):
+    async with async_session() as session:
+        await session.execute(delete(MessageLog).where(
+            MessageLog.chat_id == chat_id,
+            MessageLog.message_id.in_(message_ids)
+        ))
+        await session.commit()

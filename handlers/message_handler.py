@@ -58,6 +58,7 @@ async def handle_group_message(message: Message, bot: Bot):
     display_name = f"@{user.username}" if user.username else user.full_name
     
     await db.update_user_name_and_history(message.chat.id, user.id, display_name)
+    await db.log_message(message.chat.id, user.id, message.message_id)
 
     text = message.text or message.caption or ""
     
