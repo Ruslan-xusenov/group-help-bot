@@ -29,7 +29,7 @@ fi
 
 # Docker mavjudligini tekshirish
 if ! [ -x "$(command -v docker)" ]; then
-  echo '❌ Xatolik: docker o'rnatilmagan.' >&2
+  echo "❌ Xatolik: docker o'rnatilmagan." >&2
   exit 1
 fi
 
